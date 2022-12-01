@@ -1,0 +1,179 @@
+syntax = "proto3";
+package zb.dcts.node.zczh.zhdirection;
+import "dcts.proto";
+import "node/node.proto";
+import "node/spectrum.proto";
+import "node/detection.proto";
+import "node/replay.proto";
+import "google/protobuf/empty.proto";
+ //监测带宽
+enum IFBandWidth
+{
+	BAND_1K = 0;
+	BAND_2K = 1;
+    BAND_5K = 2;
+	BAND_10K = 3;
+    BAND_20K = 4;
+	BAND_50K = 5;
+    BAND_100K = 6;
+	BAND_200K = 7;
+    BAND_500K = 8;
+	BAND_1M = 9;
+    BAND_2M = 10;
+	BAND_5M = 11;
+    BAND_10M = 12;
+    BAND_20M = 13;
+	BAND_40M = 14;
+    BAND_80M = 15;
+}
+
+//测向带宽
+enum DFBandWidth
+{
+	DF_BAND_100hz = 0;
+    DF_BAND_200hz = 1;
+    DF_BAND_500hz = 2;
+    DF_BAND_1K = 3;
+	DF_BAND_2K = 4;
+    DF_BAND_5K = 5;
+	DF_BAND_10K = 6;
+    DF_BAND_20K = 7;
+	DF_BAND_50K = 8;
+    DF_BAND_100K = 9;
+	DF_BAND_200K = 10;
+    DF_BAND_500K = 11;
+	DF_BAND_1M = 12;
+    DF_BAND_2M = 13;
+	DF_BAND_5M = 14;
+    DF_BAND_10M = 15;
+}
+
+//测向任务参数
+message TaskParam 
+{
+    double center_frequency = 1;            //中心频率（单位：Hz） 
+    IFBandWidth if_bandwidth = 2;	        //监测带宽
+    DFBandWidth df_bandwidth = 3;	        //测向带宽
+    int32  result_interval = 4;             //监测结果回传间隔,单位ms，0代表每次扫描均上传
+    int32  status_interval = 5;             //状态回传间隔,单位ms，不低于result_interval，最低100ms
+    int32  expected_points = 6;             //希望显示的点数，0代表按原始点数上传，非零时应为偶数
+    int32  average_count = 7;               //平均次数[0,128]
+    int32  attenuation_gain = 8;            //衰减增益[-30, 20]
+    int32  antenna = 9;                     //天线模式 1-放大模式；2-直通模式；3-测试模式
+    int32  receive_mode = 10;               //接收机模式 1-低噪声；2-常规；3-低失真
+    int32  mode = 11; 	                    //门限模式 0-手动，1：自动
+	int32  value = 12; 	                    //门限值
+    int32  target_count = 13;	            //信源个数 0~8
+    int32  record_interval = 14;            //数据保存间隔，0：不保存，>0 interval的倍数
+    double  ref_level = 15;                 //参考电平
+}
+
+//测向请求
+message DirectionRequest 
+{
+    repeated NodeDevice task_runner = 1;    //参与任务的节点设备
+    TaskParam task_param = 2;               //任务参数
+}
+
+message Header
+{
+  NodeDevice result_from = 1;         //数据来源
+  string record_id = 2;               //记录id，仅在回放时有效
+  uint32 sequence_number = 3;         //顺序号，每个任务执行者维护自身的顺序号
+  uint32 sweep_count = 4;             //当前上报周期内的扫描次数
+  TimeSpan time_span = 5;             //当前上报周期内的首段和末端采集时刻（由设备提供的时间）
+  Position device_position = 6;       //设备位置
+}
+
+//目标方位
+message TargetDirection 
+{
+	double	 center_frequency = 1;  //频率
+	double	 direction = 2;	        //目标方向（单位：°）
+	int32	 confidence = 3;	    //置信度
+	float	 amplitude = 4;	        //幅度（单位：dBm）
+}
+
+//测向结果
+message Result
+{
+  Header header = 1;                    //结果头
+  TargetDirection target_detection = 2; //目标方位
+  spectrum.View df_spectrum = 3;        //频谱
+  detection.SignalList signal_list = 4; //信号列表
+}
+
+ message RecordRequest
+ {
+     TaskAccount task_account = 1;
+     int32 times_of_monitor_interval = 2;   //数据记录间隔, 应输入monitor_interval的倍数
+ }
+
+message RecordDescriptor
+{
+    string record_id = 1;
+    TimeSpan time_span = 2;
+    TaskParam task_param = 3; //任务参数
+}
+
+message RecordReply
+{
+    repeated RecordDescriptor records = 1;
+}
+
+ 
+message ReplayStartRequest
+ {
+    string record_id = 1;
+    int32 result_interval = 2;    
+ }
+
+message PosRequest
+{
+    Timestamp acquire_time = 1;     //当前时刻
+}
+
+message PosTaskId
+{
+    TaskId id = 1;     //定位id
+}
+
+message PosResult
+{
+    Position target_position = 1; //目标位置
+}
+
+message OperationStatus //任务运行状态
+{
+    NodeDevice running_device = 1;  //执行任务的节点设备id
+    TimeSpan time_span = 3; //任务已运行的时间段（由设备提供的时间）
+    uint32 total_sweep_count = 5;   //从任务开始的扫描次数计数
+    uint32 record_count = 6;        //已保存的数据记录个数
+    repeated detection.ThresholdRefLine threshold_lines = 7;  //门限线信息，不一定每次都回传
+}
+
+service ZhDirectionService 
+{
+	// 测向 实时
+	rpc StartDirection(DirectionRequest) returns(TaskAccount){} //测向任务
+	rpc StopDirection(TaskId) returns(NodeReply){}              //停止测向任务
+	rpc GetDirectionResult(TaskId) returns(stream Result){}   //获取测向结果
+    rpc RecordStart(RecordRequest) returns (NodeReply) {}               //开启记录
+    rpc RecordStop(TaskAccount) returns (NodeReply) {}                  //停止记录
+    //通用
+    rpc DataHoldOpen(spectrum.DataHoldRequest) returns (NodeReply) {}                //开启数据保持
+    rpc DataHoldReset(spectrum.DataHoldRequest)returns (NodeReply) {}                //数据保持重置
+    rpc DataHoldClose(spectrum.DataHoldRequest)returns (NodeReply) {}                //关闭数据保持
+
+    //定位
+    rpc StartPos(PosRequest) returns (PosTaskId) {}  //启动定位任务
+    rpc GetPosResult(PosTaskId) returns (stream PosResult) {}  //获取定位数据
+    rpc StopPos(PosTaskId) returns (google.protobuf.Empty) {}  //停止任务
+
+    //测向回放
+    rpc DirectRecordQuery(TimeSpan) returns(RecordReply){}    //获取测向的任务记录
+    rpc ReplayStart(ReplayStartRequest) returns(TaskAccount){}                        //启动回放
+    rpc ReplayStop(TaskId) returns (google.protobuf.Empty) {}             //停止回放
+    rpc ReplayAdjust(replay.AdjustRequest) returns(google.protobuf.Empty){}           //回放进度、速度调整
+    rpc GetReplayDirectionResult(TaskId) returns (stream Result) {}
+}

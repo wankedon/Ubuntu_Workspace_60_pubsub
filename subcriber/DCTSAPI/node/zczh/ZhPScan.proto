@@ -1,0 +1,147 @@
+syntax = "proto3";
+package zb.dcts.node.zczh.zhpscan;
+import "dcts.proto";
+import "node/node.proto";
+import "node/spectrum.proto";
+import "node/replay.proto";
+import "node/detection.proto";
+
+enum IFBandWidth
+{
+	BAND_1K = 0;
+	BAND_2K = 1;
+    BAND_5K = 2;
+	BAND_10K = 3;
+    BAND_20K = 4;
+	BAND_50K = 5;
+    BAND_100K = 6;
+	BAND_200K = 7;
+    BAND_500K = 8;
+	BAND_1M = 9;
+    BAND_2M = 10;
+	BAND_5M = 11;
+    BAND_10M = 12;
+    BAND_20M = 13;
+	BAND_40M = 14;
+    BAND_80M = 15;
+}
+
+message CalibParam 
+{
+	int32   antenna_mode = 1; 				  // 天线模式 1-下变频模式；2-直通模式、3-测试模式
+    int32	gain = 2;						  // 增益值（单位：dB） -30~30dB
+	int32	downconverter_mode = 3; 		  //下变频器工作模式 常规0 低噪声1 低失真2
+	int32	downconverter_if_attenuation = 4; //下变频器中频衰减 0~30dB
+    int32	receive_mode = 5; 				  // 接收机模式 0-常规; 1-低噪声；
+    int32	receive_rf_attenuation = 6; 	  // 接收机射频衰减 0~30dB
+    int32	receive_if_attenuation = 7; 	  // 接收机中频衰减 0~20dB
+    int32	attenuation_mode = 8; 			  // 衰减模式 0：自动，1：手动
+}
+
+//全景扫描任务参数
+message TaskParam 
+{
+    spectrum.FrequencySpan freq_span = 1;           //频率范围,单位Hz
+    double        rbw = 2;                          //分辨率,单位Hz
+    IFBandWidth   if_bandwidth = 3;                 //中频带宽,单位：Hz
+    int32         result_interval = 4;              //监测结果回传间隔,单位ms，0代表每次扫描均上传
+    int32         status_interval = 5;              //状态回传间隔,单位ms，不低于result_interval，最低100ms
+    int32         expected_points = 6;              //希望显示的点数，0代表按原始点数上传，非零时应为偶数
+    int32         average_count = 7;                //平均次数[0,128]
+    int32         attenuation_gain = 8;             //衰减增益[-30, 50] 正数衰减
+    int32         antenna = 9;                      //天线模式 1-放大模式；2-直通模式；3-测试模式
+    int32	      receive_mode = 10;                //接收机模式 1-低噪声；2-常规；3-低失真
+    int32         record_interval = 11;             //数据保存间隔，0：不保存，>0 interval的倍数
+    double        ref_level = 12;                   //参考电平
+    CalibParam    calib_param = 13;                 //校准参数
+}
+
+//启动全景扫描请求
+message TaskStartRequest 
+{
+    repeated NodeDevice task_runner = 1;    //参与任务的节点设备
+    TaskParam task_param = 2;               //任务参数
+}
+
+message RecordDescriptor
+{
+    string record_id = 1;
+    NodeDevice from = 2;
+    TimeSpan time_span = 3;
+    spectrum.FrequencySpan freq_span = 4;
+    uint32 sweep_points = 5;
+    uint32 sweep_count = 7;
+    uint32 record_count = 9;
+}
+
+message RecordRequest
+{
+    TaskAccount task_account = 1;
+    int32 times_of_monitor_interval = 2;   //数据记录间隔, 应输入monitor_interval的倍数
+}
+
+message QueryRecordReply
+{
+    NodeId node_id = 1;
+    repeated RecordDescriptor matching_records = 2;
+}
+
+message ReplayStartRequest
+{
+    replay.ReplayId replay_id = 1;
+    int32 result_interval = 4;             
+    int32 expected_points = 5;
+}
+
+message OperationStatus //任务运行状态
+{
+    NodeDevice running_device = 1;  //执行任务的节点设备id
+    TimeSpan time_span = 3; //任务已运行的时间段（由设备提供的时间）
+    uint32 total_sweep_count = 5;   //从任务开始的扫描次数计数
+    uint32 record_count = 6;        //已保存的数据记录个数
+    repeated detection.ThresholdRefLine threshold_lines = 7;  //门限线信息，不一定每次都回传
+}
+
+message Result
+{
+    spectrum.Header header = 1;
+    spectrum.View panorama_view = 2;     //全景视角的数据
+    spectrum.View closeshot_view = 3;    //近景视角的数据
+    detection.SignalList signal_list = 4;    //结果时间段内检出的信号列表
+    float peak_amplitude = 5;                //峰值
+}
+
+message QueryRecordRequest
+{
+    TaskAccount task_account = 1;
+    TimeSpan time_span = 3;
+    spectrum.FrequencySpan freq_span = 5;
+}
+
+service ZhPScanService 
+{
+    //realtime
+    rpc RealtimeStart(TaskStartRequest) returns (TaskAccount) {}        //启动实时任务
+    rpc GetRealtimeResult(TaskId) returns (stream Result) {}            //获取实时任务结果
+    rpc RecordStart(RecordRequest) returns (NodeReply) {}               //开启记录
+    rpc RecordStop(TaskAccount) returns (NodeReply) {}                  //停止记录
+    rpc RealtimeStop(TaskId) returns (NodeReply) {}                     //停止任务
+    rpc GetRealtimeStatus(TaskId)returns (stream OperationStatus) {}    //获取任务状态
+    //replay
+    rpc ReplayTaskStart(replay.CreateReplayTaskRequest) returns(TaskAccount) {}            //创建回放任务
+    rpc ReplayRecordQuery(QueryRecordRequest) returns (stream QueryRecordReply){}   //查询记录条目
+    rpc ReplayStart(ReplayStartRequest) returns(NodeReply){}                        //启动一条记录的回放（一个节点上只允许一个记录在回放）
+    rpc GetReplayResult(replay.ReplayId) returns (stream Result) {}                          //获取回放结果
+    rpc ReplayStop(replay.ReplayId) returns(NodeReply){}                                   //停止一条记录的回放
+    rpc ReplayAdjust(replay.AdjustRequest) returns(NodeReply){}                      //回放进度、速度调整
+    rpc ReplayTaskStop(TaskId) returns(NodeReply){}                            //关闭回放任务
+    //通用操作
+    rpc ZoomInOpen(spectrum.ZoomInRequest) returns (NodeReply) {}                    //选择一个近景观测范围,注意:不改变实际的扫描范围
+    rpc ZoomInClose(TaskAccount) returns (NodeReply) {}                     //关闭近景观测
+    rpc DataHoldOpen(spectrum.DataHoldRequest) returns (NodeReply) {}                //开启数据保持
+    rpc DataHoldReset(spectrum.DataHoldRequest)returns (NodeReply) {}                //数据保持重置
+    rpc DataHoldClose(spectrum.DataHoldRequest)returns (NodeReply) {}                //关闭数据保持
+    rpc DetectionOpen(detection.DetectionRequest) returns (NodeReply) {}                      //开启信号检测
+    rpc DetectionClose(TaskAccount)returns (NodeReply) {}                           //关闭信号检测
+    rpc SetSignalDetailKeeping(detection.DetailKeepingRequest) returns(NodeReply){}
+}

@@ -1,0 +1,48 @@
+syntax = "proto3";
+package zb.dcts.node.zczh.zhposition;
+import "dcts.proto";
+import "node/node.proto";
+import "node/replay.proto";
+import "google/protobuf/empty.proto";
+message TaskStartRequest
+{    
+    repeated NodeDevice task_runner = 1;    //参与任务的节点设备
+    uint32 directionTask_id = 2; //测向任务ID
+}
+//目标的定位信息
+message Result{
+    Position target_position = 1; //目标位置
+}
+
+//定位记录
+message RecordDescriptor{
+    string record_id = 1;
+    TimeSpan time_span = 2;
+    double center_frequency = 3; //中心频率
+    uint32 record_count = 4;
+}
+message RecordReply
+{
+    repeated RecordDescriptor records = 1;
+}
+
+message ReplayStartRequest
+{
+    string record_id = 1;
+    int32 result_interval = 2;             
+}
+
+service ZhPositionService 
+{
+  //实时
+  rpc RealtimeStart(TaskStartRequest) returns (TaskAccount) {}  //启动定位任务
+  rpc GetRealtimeResult(TaskId) returns (stream Result) {}  //获取任务数据
+  rpc RealtimeStop(TaskId) returns (NodeReply) {}  //停止任务
+
+  //回放
+  rpc ReplayRecordQuery(TimeSpan) returns(RecordReply){}    //获取定位任务记录
+  rpc ReplayStart(ReplayStartRequest) returns(TaskAccount){}                        //启动回放
+  rpc ReplayStop(TaskId) returns (google.protobuf.Empty) {}             //停止回放
+  rpc ReplayAdjust(replay.AdjustRequest) returns(google.protobuf.Empty){}           //回放进度、速度调整
+  rpc GetReplayResult(TaskId) returns (stream Result) {}
+}

@@ -1,0 +1,120 @@
+syntax = "proto3";
+package zb.dcts.node.zczh.zhIQAcquire;
+import "dcts.proto";
+import "node/node.proto";
+import "node/spectrum.proto";
+import "node/replay.proto";
+
+enum IFBandWidth
+{
+	BAND_1K = 0;
+	BAND_2K = 1;
+    BAND_5K = 2;
+	BAND_10K = 3;
+    BAND_20K = 4;
+	BAND_50K = 5;
+    BAND_100K = 6;
+	BAND_200K = 7;
+    BAND_500K = 8;
+	BAND_1M = 9;
+    BAND_2M = 10;
+	BAND_5M = 11;
+    BAND_10M = 12;
+    BAND_20M = 13;
+	BAND_40M = 14;
+    BAND_80M = 15;
+}
+
+//IQ采集任务参数
+message TaskParam{
+    spectrum.FrequencySpan span = 1; //频段范围（单位：Hz） 
+    IFBandWidth IF_bandwidth = 2;	 //中频带宽（单位：Hz）
+    int32  interval = 3;             //结果回传间隔,单位ms，0代表每次扫描均上传
+    int32  attenuation_gain = 4;     //衰减增益[-30, 20]
+    int32  antenna = 5;              //天线选择[0,1]
+    int32  receive_mode = 6;         //接收机模式[1,2] 1-低噪声；2-常规
+    uint32 points = 7;               //采样点数 0-一直工作，>0采集相应点数后停止工作
+    bool   header_only = 8;          //是否只传header，在只是本地存储时可以设置为true
+    bool   is_record = 9;            //是否启动任务保存
+}
+
+//启动IQ扫描的请求
+message StartIQRequest{
+    repeated NodeDevice task_runner = 1;    //任务执行单元
+    TaskParam task_param = 2;               //扫描参数
+}
+
+//IQ扫描结果头
+message ResultHeader{
+    NodeDevice  result_from = 1;        //结果来源
+    string      record_id = 2;          //记录id，仅在回放时有效
+    uint64		sequence_number = 3;    //顺序号
+    uint64		sweep_index = 4;        //扫描次数索引
+    uint32		segment_index = 5;      //频点索引
+    int32       data_type = 6;
+    uint32      truncate_bits = 7;       //截位数(16位iq有效)
+    bool        is_last_one = 8;        //是否是最后一段IQ数据
+    double		center_frequency = 9;   //中心频率,单位Hz
+    double		sample_rate = 10;       //采样率,单位Hz
+    double      scale_to_volts = 11;    //电压比例尺,具体请参照文档换算
+    Timestamp   time_stamp = 12;        //时间戳
+    Position    position = 15;          //采集时所处的位置
+}
+
+message ResutlBody{
+    repeated float iq_data = 1;   //IQ数据,I和Q值交叉排列
+}
+
+//IQ结果
+message Result{
+    ResultHeader header = 1;     //结果头
+    ResutlBody body = 2;
+}
+
+message RecordDescriptor
+{
+    string record_id = 1;
+    NodeDevice from = 2;
+    TimeSpan time_span = 3;
+    uint32 record_count = 4;
+    repeated spectrum.BaseBand bands = 5;
+}
+
+message QueryRecordRequest
+{
+    TaskAccount task_account = 1;
+    int32 segment_count = 2;
+    TimeSpan time_span = 3;
+    spectrum.FrequencySpan freq_span = 5;
+}
+
+message QueryRecordReply
+{
+    NodeId node_id = 1;
+    repeated RecordDescriptor matching_records = 2;
+}
+
+message ReplayStartRequest
+{
+    replay.ReplayId replay_id = 1;
+    int32 result_interval = 3;
+}
+
+//IQ获取API
+service ZhIQAcquireService
+{
+    //realtime
+    rpc RealtimeStart(StartIQRequest) returns (TaskAccount) {}  //启动实时任务
+    rpc GetRealtimeResult(TaskId) returns (stream Result) {}    //获取实时任务结果
+    rpc RealtimeStop(TaskId) returns (NodeReply) {}             //停止实时任务
+    rpc RecordStart(TaskAccount) returns (NodeReply) {}         //开启节点端的记录
+    rpc RecordStop(TaskAccount) returns (NodeReply) {}          //关闭节点端的记录
+    //replay
+    rpc ReplayTaskStart(replay.CreateReplayTaskRequest) returns(TaskAccount) {}     //创建回放任务
+    rpc ReplayRecordQuery(QueryRecordRequest) returns (stream QueryRecordReply){}   //查询记录条目
+    rpc ReplayStart(ReplayStartRequest) returns(NodeReply){}                        //启动一条记录的回放（一个节点上只允许一个记录在回放）
+    rpc GetReplayResult(replay.ReplayId) returns (stream Result) {}                 //获取回放结果
+    rpc ReplayStop(replay.ReplayId) returns(NodeReply){}                            //停止一条记录的回放
+    rpc ReplayAdjust(replay.AdjustRequest) returns(NodeReply){}                     //回放进度、速度调整
+    rpc ReplayTaskStop(TaskId) returns(NodeReply){}                                 //关闭回放任务
+}
